@@ -2,6 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 from googletrans import Translator
 import time
+import sys
 
 BOT_TOKEN = "7041028618:AAEeZuJSJSvUm_Z1e5j7_oFEPDHFRI-V5Gc"
 CHAT_ID = "5288102820"
@@ -31,6 +32,8 @@ def send_message(text):
     payload = {'chat_id': CHAT_ID, 'text': text}
     response = requests.post(url, data=payload)
     print("Telegram хариу:", response.status_code, response.text)
+    print("Мэдээ уншлаа:", title)
+sys.stdout.flush()
 
 if __name__ == "__main__":
     while True:
