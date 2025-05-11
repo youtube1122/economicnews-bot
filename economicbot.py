@@ -2,17 +2,14 @@ import requests
 from bs4 import BeautifulSoup
 from googletrans import Translator
 import time
-import os
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+BOT_TOKEN = "7041028618:AAEeZuJSJSvUm_Z1e5j7_oFEPDHFRI-V5Gc"
+CHAT_ID = "5288102820"
 RSS_URL = 'https://www.investing.com/rss/news_25.rss'
 
 translator = Translator()
-last_titles = []
 
 def fetch_and_send_news():
-    global last_titles
     try:
         response = requests.get(RSS_URL)
         soup = BeautifulSoup(response.content, 'xml')
@@ -21,11 +18,10 @@ def fetch_and_send_news():
         for item in items:
             title = item.title.text
             link = item.link.text
-            if title not in last_titles:
+            if True:
                 translated = translator.translate(title, src='en', dest='mn').text
                 message = f"📰 {translated}\n🔗 {link}"
                 send_message(message)
-                last_titles.append(title)
     except Exception as e:
         print(f"Алдаа гарлаа: {e}")
 
@@ -38,9 +34,3 @@ if __name__ == "__main__":
     while True:
         fetch_and_send_news()
         time.sleep(30)
-
-
-
-
-
-
