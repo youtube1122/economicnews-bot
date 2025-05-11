@@ -20,20 +20,27 @@ def fetch_and_send_news():
             title = item.title.text
             link = item.link.text
             print("Мэдээ уншлаа:", title)
+            sys.stdout.flush()
+
             translated = translator.translate(title, src='en', dest='mn').text
             message = f"📰 {translated}\n🔗 {link}"
             send_message(message)
+            time.sleep(2)  # Битгий хэт хурдан дарааллаар илгээ
+
     except Exception as e:
         print(f"Алдаа гарлаа: {e}")
+        sys.stdout.flush()
 
 def send_message(text):
-    print("Илгээж байна:", text)
+    print("Илгээх гэж оролдож байна:", text)
+    sys.stdout.flush()
+
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {'chat_id': CHAT_ID, 'text': text}
     response = requests.post(url, data=payload)
+
     print("Telegram хариу:", response.status_code, response.text)
-    print("Мэдээ уншлаа:", title)
-sys.stdout.flush()
+    sys.stdout.flush()
 
 if __name__ == "__main__":
     while True:
