@@ -18,19 +18,19 @@ def fetch_and_send_news():
         for item in items:
             title = item.title.text
             link = item.link.text
-            if True:
-                translated = translator.translate(title, src='en', dest='mn').text
-                message = f"📰 {translated}\n🔗 {link}"
-                send_message(message)
+            print("Мэдээ уншлаа:", title)
+            translated = translator.translate(title, src='en', dest='mn').text
+            message = f"📰 {translated}\n🔗 {link}"
+            send_message(message)
     except Exception as e:
         print(f"Алдаа гарлаа: {e}")
 
 def send_message(text):
-    print("Илгээх гэж оролдож байна:", text)  # энэ мөрийг нэм
+    print("Илгээж байна:", text)
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {'chat_id': CHAT_ID, 'text': text}
     response = requests.post(url, data=payload)
-    print("Telegram хариу:", response.status_code, response.text)  # энэ мөрийг нэм
+    print("Telegram хариу:", response.status_code, response.text)
 
 if __name__ == "__main__":
     while True:
