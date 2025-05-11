@@ -37,7 +37,7 @@ def send_message(text):
 if __name__ == "__main__":
     while True:
         fetch_and_send_news()
-        time.sleep(3600)
+        time.sleep(30)
 
 
 
