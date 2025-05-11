@@ -26,9 +26,11 @@ def fetch_and_send_news():
         print(f"Алдаа гарлаа: {e}")
 
 def send_message(text):
+    print("Илгээх гэж оролдож байна:", text)  # энэ мөрийг нэм
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     payload = {'chat_id': CHAT_ID, 'text': text}
-    requests.post(url, data=payload)
+    response = requests.post(url, data=payload)
+    print("Telegram хариу:", response.status_code, response.text)  # энэ мөрийг нэм
 
 if __name__ == "__main__":
     while True:
