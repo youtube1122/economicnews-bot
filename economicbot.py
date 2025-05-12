@@ -1,97 +1,76 @@
 import tweepy
-import json
-import time
 import requests
-from googletrans import Translator
+import json
+import os
+import time
+from deep_translator import GoogleTranslator
 
-# ==== CONFIG ====
+# 🔐 Нууцууд
+BEARER_TOKEN = os.getenv("BEARER_TOKEN", "Чиний_Bearer_Token")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "Чиний_Telegram_Bot_Token")
+CHAT_ID = os.getenv("CHAT_ID", "Чиний_Chat_ID")
 
-BEARER_TOKEN = 'AAAAAAAAAAAAAAAAAAAAAObV1AEAAAAA3wxSWOhzRMvzp1RLCEmtd3rNT6w%3D7aoXAHT2lUxDBNSjYun5QJHcQlToHHFVuFdIv04R2AKniXcxx2'
-BOT_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'  # Энд Telegram Bot Token-оо оруулна
-CHAT_ID = 'YOUR_TELEGRAM_CHAT_ID'      # Энд Telegram Chat ID-гаа оруулна
-translator = Translator()
-SEEN_FILE = 'seen_tweets.json'
-
-# ==== ТАНЫ АНГИЛАЛ БА ХАЯГУУД ====
-USER_CATEGORIES = {
-    'Макро': ['business', 'CryptoAlerts_'],
-    'Крипто': ['coindesk', 'CryptoAlerts_', 'cointelegraph']
+# 🔎 Твиттер хэрэглэгчид (username)
+TWITTER_ACCOUNTS = {
+    "macro": ["business"],
+    "crypto": ["CryptoAlerts_", "coindesk", "cointelegraph"]
 }
 
-# ==== TWITTER AUTH ====
+# 🗃 Давхардал шалгах JSON файл
+POSTED_FILE = "posted.json"
+if not os.path.exists(POSTED_FILE):
+    with open(POSTED_FILE, "w") as f:
+        json.dump([], f)
+
+with open(POSTED_FILE, "r") as f:
+    posted_ids = json.load(f)
+
+# 🐦 Tweepy client
 client = tweepy.Client(bearer_token=BEARER_TOKEN)
 
-# === Твит ID ачаалж, хадгалах ===
-def load_seen_ids():
+def translate(text):
     try:
-        with open(SEEN_FILE, 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
-
-def save_seen_ids(seen_ids):
-    with open(SEEN_FILE, 'w') as f:
-        json.dump(seen_ids, f)
-
-# === Telegram руу илгээх ===
-def send_telegram_message(title, text, image_url=None, category=""):
-    caption = f"📂 {category}\n📰 {title}\n\n{text}"
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto" if image_url else f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        'chat_id': CHAT_ID,
-        'caption': caption if image_url else None,
-        'photo': image_url if image_url else None,
-        'text': caption if not image_url else None,
-        'parse_mode': 'HTML'
-    }
-    payload = {k: v for k, v in payload.items() if v is not None}
-    requests.post(url, data=payload)
-
-# === Орчуулга ===
-def translate_text(text):
-    try:
-        return translator.translate(text, src='en', dest='mn').text
+        return GoogleTranslator(source='auto', target='mn').translate(text)
     except:
         return text
 
-# === Шинэ мэдээ татах ===
-def fetch_and_send():
-    seen_ids = load_seen_ids()
+def send_telegram(message):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    data = {'chat_id': CHAT_ID, 'text': message}
+    requests.post(url, data=data)
 
-    for category, usernames in USER_CATEGORIES.items():
-        for username in usernames:
+def fetch_and_send():
+    global posted_ids
+
+    for category, accounts in TWITTER_ACCOUNTS.items():
+        for username in accounts:
             try:
                 user = client.get_user(username=username)
-                tweets = client.get_users_tweets(id=user.data.id, max_results=5, tweet_fields=["created_at"], expansions=["attachments.media_keys"], media_fields=["url"])
-                media_urls = {}
-                if tweets.includes and "media" in tweets.includes:
-                    media_urls = {m.media_key: m.url for m in tweets.includes['media'] if m.type == 'photo'}
+                tweets = client.get_users_tweets(id=user.data.id, max_results=5, tweet_fields=["created_at", "text"])
+                if not tweets.data:
+                    continue
 
                 for tweet in tweets.data:
-                    tweet_id = str(tweet.id)
-                    if tweet_id in seen_ids.get(username, []):
+                    if tweet.id in posted_ids:
                         continue
+                    
+                    title = tweet.text.split('\n')[0][:80]
+                    translated_text = translate(tweet.text)
+                    link = f"https://x.com/{username}/status/{tweet.id}"
+                    message = f"📌 {category.upper()} мэдээ\n\n📰 {translated_text}\n🔗 {link}"
 
-                    translated = translate_text(tweet.text)
-                    image_url = None
-                    if 'attachments' in tweet.data and 'media_keys' in tweet.data['attachments']:
-                        keys = tweet.data['attachments']['media_keys']
-                        for key in keys:
-                            if key in media_urls:
-                                image_url = media_urls[key]
-                                break
+                    send_telegram(message)
+                    print("Илгээлээ:", tweet.id)
+                    
+                    posted_ids.append(tweet.id)
+                    with open(POSTED_FILE, "w") as f:
+                        json.dump(posted_ids, f)
 
-                    send_telegram_message(category=category, title=username, text=translated, image_url=image_url)
-                    seen_ids.setdefault(username, []).append(tweet_id)
-                    time.sleep(2)
-
+                    time.sleep(2)  # хооронд нь бага зэрэг зайтай явуулах
             except Exception as e:
-                print(f"⚠️ {username} дээр алдаа: {e}")
+                print("⚠️ Алдаа:", e)
 
-    save_seen_ids(seen_ids)
-
-# === LOOP ===
 if __name__ == "__main__":
     while True:
         fetch_and_send()
-        time.sleep(60)  # 1 мин тутамд шалгана
+        time.sleep(60)  # минут тутамд шалгах
