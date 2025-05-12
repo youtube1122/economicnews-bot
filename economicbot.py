@@ -1,76 +1,91 @@
-import tweepy
-import requests
-import json
 import os
+import json
 import time
+import requests
 from deep_translator import GoogleTranslator
 
-# 🔐 Нууцууд
-BEARER_TOKEN = os.getenv("BEARER_TOKEN", "Чиний_Bearer_Token")
-BOT_TOKEN = os.getenv("BOT_TOKEN", "Чиний_Telegram_Bot_Token")
-CHAT_ID = os.getenv("CHAT_ID", "Чиний_Chat_ID")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
+BEARER_TOKEN = os.getenv("BEARER_TOKEN")
 
-# 🔎 Твиттер хэрэглэгчид (username)
-TWITTER_ACCOUNTS = {
-    "macro": ["business"],
-    "crypto": ["CryptoAlerts_", "coindesk", "cointelegraph"]
+HEADERS = {
+    "Authorization": f"Bearer {BEARER_TOKEN}"
 }
 
-# 🗃 Давхардал шалгах JSON файл
-POSTED_FILE = "posted.json"
-if not os.path.exists(POSTED_FILE):
-    with open(POSTED_FILE, "w") as f:
-        json.dump([], f)
+TWITTER_ACCOUNTS = {
+    "Макро": ["business"],
+    "Крипто": ["coindesk", "CryptoAlerts_", "cointelegraph"]
+}
 
-with open(POSTED_FILE, "r") as f:
-    posted_ids = json.load(f)
+SEEN_FILE = "seen_tweets.json"
 
-# 🐦 Tweepy client
-client = tweepy.Client(bearer_token=BEARER_TOKEN)
+def load_seen():
+    if os.path.exists(SEEN_FILE):
+        with open(SEEN_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_seen(data):
+    with open(SEEN_FILE, "w") as f:
+        json.dump(data, f)
+
+def fetch_tweets(username):
+    url = f"https://api.twitter.com/2/tweets/search/recent?query=from:{username}&tweet.fields=text,created_at&expansions=attachments.media_keys,author_id&media.fields=url"
+    response = requests.get(url, headers=HEADERS)
+    if response.status_code == 200:
+        return response.json().get("data", [])
+    else:
+        print(f"[{username}] Error: {response.status_code}, {response.text}")
+        return []
 
 def translate(text):
     try:
         return GoogleTranslator(source='auto', target='mn').translate(text)
-    except:
+    except Exception as e:
+        print("Орчуулгын алдаа:", e)
         return text
 
-def send_telegram(message):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    data = {'chat_id': CHAT_ID, 'text': message}
-    requests.post(url, data=data)
+def send_telegram(title, desc, img_url=None, category="Крипто"):
+    text = f"<b>{category}</b>\n\n<b>{title}</b>\n\n{desc}"
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto" if img_url else f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-def fetch_and_send():
-    global posted_ids
+    payload = {
+        "chat_id": CHAT_ID,
+        "caption": text,
+        "parse_mode": "HTML"
+    }
 
-    for category, accounts in TWITTER_ACCOUNTS.items():
-        for username in accounts:
-            try:
-                user = client.get_user(username=username)
-                tweets = client.get_users_tweets(id=user.data.id, max_results=5, tweet_fields=["created_at", "text"])
-                if not tweets.data:
-                    continue
+    if img_url:
+        payload["photo"] = img_url
+    else:
+        payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}
 
-                for tweet in tweets.data:
-                    if tweet.id in posted_ids:
+    res = requests.post(url, data=payload)
+    print("Telegram response:", res.status_code)
+
+def main():
+    seen = load_seen()
+
+    while True:
+        for category, usernames in TWITTER_ACCOUNTS.items():
+            for user in usernames:
+                tweets = fetch_tweets(user)
+                if user not in seen:
+                    seen[user] = []
+
+                for tweet in tweets:
+                    tweet_id = tweet["id"]
+                    if tweet_id in seen[user]:
                         continue
-                    
-                    title = tweet.text.split('\n')[0][:80]
-                    translated_text = translate(tweet.text)
-                    link = f"https://x.com/{username}/status/{tweet.id}"
-                    message = f"📌 {category.upper()} мэдээ\n\n📰 {translated_text}\n🔗 {link}"
 
-                    send_telegram(message)
-                    print("Илгээлээ:", tweet.id)
-                    
-                    posted_ids.append(tweet.id)
-                    with open(POSTED_FILE, "w") as f:
-                        json.dump(posted_ids, f)
+                    seen[user].append(tweet_id)
+                    title = translate(tweet.get("text", "")[:100])
+                    desc = translate(tweet.get("text", ""))
+                    send_telegram(title, desc, category=category)
+                    time.sleep(1)
 
-                    time.sleep(2)  # хооронд нь бага зэрэг зайтай явуулах
-            except Exception as e:
-                print("⚠️ Алдаа:", e)
+        save_seen(seen)
+        time.sleep(60)
 
 if __name__ == "__main__":
-    while True:
-        fetch_and_send()
-        time.sleep(60)  # минут тутамд шалгах
+    main()
