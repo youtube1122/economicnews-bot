@@ -1,91 +1,82 @@
-import os
-import json
+import feedparser
 import time
 import requests
+import hashlib
+import os
 from deep_translator import GoogleTranslator
 
+# Telegram Bot тохиргоо
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
-BEARER_TOKEN = os.getenv("BEARER_TOKEN")
 
-HEADERS = {
-    "Authorization": f"Bearer {BEARER_TOKEN}"
-}
+# RSS эх сурвалжууд
+FEEDS = [
+    "https://cointelegraph.com/rss",
+    "https://cryptonews.com/news/feed",
+    "https://decrypt.co/feed",
+    "https://www.coindesk.com/arc/outboundfeeds/rss/"
+]
 
-TWITTER_ACCOUNTS = {
-    "Макро": ["business"],
-    "Крипто": ["coindesk", "CryptoAlerts_", "cointelegraph"]
-}
-
-SEEN_FILE = "seen_tweets.json"
-
-def load_seen():
-    if os.path.exists(SEEN_FILE):
-        with open(SEEN_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_seen(data):
-    with open(SEEN_FILE, "w") as f:
-        json.dump(data, f)
-
-def fetch_tweets(username):
-    url = f"https://api.twitter.com/2/tweets/search/recent?query=from:{username}&tweet.fields=text,created_at&expansions=attachments.media_keys,author_id&media.fields=url"
-    response = requests.get(url, headers=HEADERS)
-    if response.status_code == 200:
-        return response.json().get("data", [])
-    else:
-        print(f"[{username}] Error: {response.status_code}, {response.text}")
-        return []
+# Давхардсан мэдээг шалгахын тулд ID хадгална
+SEEN_FILE = "seen_rss_crypto.json"
+if os.path.exists(SEEN_FILE):
+    with open(SEEN_FILE, 'r') as f:
+        seen_ids = set(f.read().splitlines())
+else:
+    seen_ids = set()
 
 def translate(text):
     try:
         return GoogleTranslator(source='auto', target='mn').translate(text)
-    except Exception as e:
-        print("Орчуулгын алдаа:", e)
+    except:
         return text
 
-def send_telegram(title, desc, img_url=None, category="Крипто"):
-    text = f"<b>{category}</b>\n\n<b>{title}</b>\n\n{desc}"
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto" if img_url else f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-
-    payload = {
+def send_telegram(title, desc, link, image_url=None):
+    caption = f"<b>{title}</b>\n\n{desc}\n\n<a href='{link}'>Дэлгэрэнгүй унших</a>"
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto" if image_url else f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    data = {
         "chat_id": CHAT_ID,
-        "caption": text,
+        "caption": caption,
+        "photo": image_url,
+        "parse_mode": "HTML"
+    } if image_url else {
+        "chat_id": CHAT_ID,
+        "text": caption,
         "parse_mode": "HTML"
     }
+    requests.post(url, data=data)
 
-    if img_url:
-        payload["photo"] = img_url
-    else:
-        payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"}
+def fetch_news():
+    global seen_ids
+    for feed_url in FEEDS:
+        feed = feedparser.parse(feed_url)
+        for entry in feed.entries[:5]:
+            uid = hashlib.md5(entry.link.encode()).hexdigest()
+            if uid in seen_ids:
+                continue
+            seen_ids.add(uid)
 
-    res = requests.post(url, data=payload)
-    print("Telegram response:", res.status_code)
+            title = translate(entry.title)
+            desc = translate(entry.summary if hasattr(entry, 'summary') else '')
+            link = entry.link
 
-def main():
-    seen = load_seen()
+            image_url = None
+            if 'media_content' in entry:
+                image_url = entry.media_content[0].get('url')
+            elif 'links' in entry:
+                for link_obj in entry.links:
+                    if link_obj.type.startswith('image'):
+                        image_url = link_obj.href
+                        break
 
-    while True:
-        for category, usernames in TWITTER_ACCOUNTS.items():
-            for user in usernames:
-                tweets = fetch_tweets(user)
-                if user not in seen:
-                    seen[user] = []
+            send_telegram(title, desc, link, image_url)
+            time.sleep(2)
 
-                for tweet in tweets:
-                    tweet_id = tweet["id"]
-                    if tweet_id in seen[user]:
-                        continue
-
-                    seen[user].append(tweet_id)
-                    title = translate(tweet.get("text", "")[:100])
-                    desc = translate(tweet.get("text", ""))
-                    send_telegram(title, desc, category=category)
-                    time.sleep(1)
-
-        save_seen(seen)
-        time.sleep(60)
+    with open(SEEN_FILE, 'w') as f:
+        f.write('\n'.join(seen_ids))
 
 if __name__ == "__main__":
-    main()
+    while True:
+        fetch_news()
+        time.sleep(300)  # 5 минут тутамд шалгана
+
