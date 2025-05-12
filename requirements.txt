@@ -1,8 +1,4 @@
-
-requests
-beautifulsoup4
+tweepy
 googletrans==4.0.0-rc1
-lxml
-feedparser
-deep_translator
+requests
 
